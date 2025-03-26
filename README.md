@@ -1,96 +1,65 @@
-# Pràctica 4: SISTEMES OPERATIUS EN TEMPS REAL
+# P4
 
-## Introducció
+## Objectiu
+L'objectiu de la pràctica és comprendre el funcionament d'un sistema operatiu en temps real mitjançant la creació de diverses tasques i observar com s'executen compartint el temps d'ús de la CPU.
 
-Aquesta pràctica se centra en els sistemes operatius en temps real i la seva capacitat per gestionar múltiples tasques de manera eficient. Es defineix un temps determinat per a cada tasca, permetent repartir el temps de processament entre elles.
+## Materials
+- ESP32  
+- 2 LEDS  
 
-## Exercici pràctic *part 1*
-
-En aquesta primera part, es crea un programa que implementa dues tasques en paral·lel utilitzant FreeRTOS a l'ESP32. Cada tasca imprimeix missatges diferents al port sèrie de manera alternada cada segon.
-
-**Tasca principal:** S'executa a la funció `loop()`. Imprimeix "this is ESP32 Task" cada segon.
-
-**Segona tasca:** Creada des de la funció `setup()` com a `anotherTask`. Imprimeix "this is another Task" també cada segon, executant-se de manera concurrent amb la tasca principal.
-
-El resultat mostrat al port sèrie és:
-
-```
-- this is ESP32 Task  
-- this is another Task  
-- this is ESP32 Task  
-- this is another Task  
-```
-
-### Codi
+## Codi
 
 ```cpp
-#include<Arduino.h>
-
-void anotherTask(void *parameter);
-
-void setup() {
-  Serial.begin(112500);
-
-  // Creamos una nueva tarea aquí
-  xTaskCreate(
-      anotherTask,     // Función de la tarea
-      "another Task",  // Nombre de la tarea
-      10000,            // Tamaño de la pila de la tarea
-      NULL,             // Parámetro de la tarea
-      1,                // Prioridad de la tarea
-      NULL              // Manejador de la tarea para realizar un seguimiento de la tarea creada
-  );
+void setup()
+{
+    Serial.begin(112500);
+    /* Creem una nova tasca aquí */
+    xTaskCreate(
+        anotherTask, /* Funció de la tasca */
+        "another Task", /* Nom de la tasca */
+        10000, /* Mida de la pila de la tasca */
+        NULL, /* Paràmetre de la tasca */
+        1, /* Prioritat de la tasca */
+        NULL /* Handle per fer seguiment de la tasca creada */
+    );
 }
 
-// La función loop() es invocada por el loopTask de Arduino ESP32
-void loop() {
-  Serial.println("this is ESP32 Task");
-  delay(1000);
-}
-
-// Esta función se invocará cuando se haya creado la tarea adicional (anotherTask)
-void anotherTask(void *parameter) {
-  // Bucle infinito
-  for (;;) {
-    Serial.println("this is another Task");
+/* La funció loop() es crida contínuament per l'ESP32 */
+void loop()
+{
+    Serial.println("this is ESP32 Task");
     delay(1000);
-  }
+}
 
-  // Eliminar la tarea al finalizar (esto nunca ocurrirá porque es un bucle infinito)
-  vTaskDelete(NULL);
+/* Aquesta funció s'executa quan es crea anotherTask */
+void anotherTask(void * parameter)
+{
+    /* Bucle infinit */
+    for(;;)
+    {
+        Serial.println("this is another Task");
+        delay(1000);
+    }
+    /* Eliminació de la tasca quan finalitzi (aquí mai passa perquè el bucle és infinit) */
+    vTaskDelete(NULL);
 }
 ```
+
+## Sortida esperada
+
+```
+    this is another Task
+    this is ESP32 Task
+    this is another Task
+    this is ESP32 Task
+```
+
+## Descripció
+Aquest codi mostra com crear una tasca addicional per permetre l'execució concurrent de diverses tasques. La tasca addicional imprimeix un missatge periòdicament per sèrie mentre el bucle principal (`loop()`) realitza una acció similar. Aquesta tasca es crea mitjançant la funció `xTaskCreate` i s'executa a `anotherTask`.
 
 ---
 
-## Exercici pràctic *part 2* - *Semàfor*
-
-En aquesta segona part, es millora el control de dos LEDs mitjançant l'ús de semàfors en FreeRTOS. El semàfor garanteix que només una de les tasques controli els LEDs a la vegada, assegurant que un estigui encès mentre l'altre es manté apagat.
-
-### Descripció del codi
-
-El programa configura dos pins (LED1 i LED2) com a sortides i crea un semàfor binari. Es generen dues tasques:
-
-- **TascaLed1:** Encén el LED1 i apaga el LED2.
-- **TascaLed2:** Encén el LED2 i apaga el LED1.
-
-Cada tasca espera obtenir el semàfor (`xSemaphoreTake`) per executar-se. En acabar, allibera el semàfor (`xSemaphoreGive`) perquè l'altra tasca prengui el control.
-
-S'ha afegit `vTaskDelay(1000 / portTICK_PERIOD_MS)` per fer el retard més precís i compatible amb la configuració interna de FreeRTOS.
-
-### Funcionament i sortida pel port sèrie
-
-El programa alterna entre les dues tasques cada segon. A la terminal es mostrarà:
-
-```
-LED1 ON / LED2 OFF  
-LED1 OFF / LED2 ON  
-LED1 ON / LED2 OFF  
-LED1 OFF / LED2 ON  
-...  
-```
-
-### Codi
+## Codi amb semàfors
 
 ```cpp
 #include <Arduino.h>
@@ -98,40 +67,65 @@ LED1 OFF / LED2 ON
 #include <task.h>
 #include <semphr.h>
 
-const int ledPin = 11;
+// Definició de pins
+const int ledPin = 23;
 
-SemaphoreHandle_t semaphore;
+// Declaració de semàfors
+SemaphoreHandle_t semaforEncendre;
+SemaphoreHandle_t semaforApagar;
+
+// Prototips de funcions
+void tascaEncendre(void *parameter);
+void tascaApagar(void *parameter);
 
 void setup() {
     Serial.begin(115200);
-    pinMode(ledPin, OUTPUT);
 
-    semaphore = xSemaphoreCreateBinary();
-    
-    xTaskCreate(encenderLED, "Encender LED", 1000, NULL, 1, NULL);
-    xTaskCreate(apagarLED, "Apagar LED", 1000, NULL, 1, NULL);
+    // Inicialització de semàfors
+    semaforEncendre = xSemaphoreCreateBinary();
+    semaforApagar = xSemaphoreCreateBinary();
+
+    // Creació de tasques
+    xTaskCreate(tascaEncendre, "Encendre LED", 1000, NULL, 1, NULL);
+    xTaskCreate(tascaApagar, "Apagar LED", 1000, NULL, 1, NULL);
+
+    // Inicialització del pin del LED
+    pinMode(ledPin, OUTPUT);
 }
 
 void loop() {
-
+    // No s’utilitza en aquest exemple
 }
 
-void encenderLED(void *parameter) {
+void tascaEncendre(void *parameter) {
     for (;;) {
+        // Espera fins que es desbloquegi el semàfor per encendre el LED
+        xSemaphoreTake(semaforEncendre, portMAX_DELAY);
+
+        Serial.println("Encenent LED");
         digitalWrite(ledPin, HIGH);
-        Serial.println("LED HIGH");
-        delay(1000);
-        xSemaphoreGive(semaphore); 
+        delay(1000); // Espera 1 segon
+
+        // Allibera el semàfor perquè l'altra tasca pugui apagar el LED
+        xSemaphoreGive(semaforApagar);
     }
 }
 
-void apagarLED(void *parameter) {
+void tascaApagar(void *parameter) {
     for (;;) {
+        // Espera fins que es desbloquegi el semàfor per apagar el LED
+        xSemaphoreTake(semaforApagar, portMAX_DELAY);
+
+        Serial.println("Apagant LED");
         digitalWrite(ledPin, LOW);
-        Serial.println("LED LOW");
-        delay(1000);
-        xSemaphoreGive(semaphore); 
-    }  
+        delay(1000); // Espera 1 segon
+
+        // Allibera el semàfor perquè l'altra tasca pugui encendre el LED
+        xSemaphoreGive(semaforEncendre);
+    }
 }
 ```
+
+## Descripció
+En aquest codi es creen dues tasques (`tascaEncendre` i `tascaApagar`) que s'executen en bucles infinits. Cada tasca espera que es desbloquegi un semàfor específic abans de realitzar la seva acció (encendre o apagar el LED). Després d’executar l’acció corresponent, la tasca allibera el semàfor adequat perquè l'altra tasca pugui executar-se. Això garanteix una sincronització correcta entre les dues tasques.
 
